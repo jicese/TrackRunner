@@ -16,6 +16,7 @@
 #include <Roster.h>
 #include <TrackerAddOn.h>
 #include <private/shared/CommandPipe.h>
+#include "ProgressWindow.h"
 
 #ifdef USE_MENUITEM_ICONS
 #include <private/tracker/IconMenuItem.h>
@@ -57,17 +58,16 @@ RunnerAddOn::RunCommand(BMessage* message)
 	if (cwdPath.InitCheck() != B_OK)
 		return B_ERROR;
 
-	// add selected files as command arguments
-	entry_ref ref;
-	for (int32 index = 0; message->FindRef("refs", index, &ref) == B_OK; index++) {
-		BPath path(&ref);
-		BString pathString(path.Path());
-		// escape any single quotes
-		pathString.ReplaceAll("'", "'\\''");
-		commandString << " '" << pathString << "'";
-	}
-
 	if (itemMessage.GetBool(kEntryUseTerminalKey)) {
+		// add selected files as command arguments
+		entry_ref ref;
+		for (int32 index = 0; message->FindRef("refs", index, &ref) == B_OK; index++) {
+			BPath path(&ref);
+			BString pathString(path.Path());
+			// escape any single quotes
+			pathString.ReplaceAll("'", "'\\''");
+			commandString << " '" << pathString << "'";
+		}
 		//TODO make the read command optional but enabled by default
 		commandString << "\n echo \"<<< Finished with status: $? >>>\"; read -p '<<<  Press ENTER to close!  >>>'";
 
@@ -77,7 +77,49 @@ RunnerAddOn::RunCommand(BMessage* message)
 
 		const char* argv[] = { "-w", cwdPath.Path(), "-t", titleString.String(), "/bin/sh", "-c", commandString, NULL };
 		be_roster->Launch(kTerminalSignature, 7, argv);
-	} else {
+	} 
+	else {
+		type_code type;
+		int32 count = 0;
+		
+		// TODO allow no files selected
+        message->GetInfo("refs", &type, &count);
+		if(count == 0) {
+			BAlert *alert = new BAlert("TrackRunner", "No file selected.", "OK");
+			alert->Go();
+			return B_OK;
+		}		
+		
+		ProgressWindow* progressWindow = NULL;
+		BString progressTitle("Executing ");
+		progressTitle << nameString;
+		progressTitle << " on ";
+	    progressTitle << count << " files";
+	    progressWindow = new ProgressWindow(&progressTitle);
+	    progressWindow->Show();
+
+		entry_ref ref;
+		int32 i = 0;
+    	for (int32 index = 0; message->FindRef("refs", index, &ref) == B_OK; index++) {
+			BPath path(&ref);
+//        	BString command("/boot/home/ShellIt.sh ");
+        	BString command(commandString);
+        	command << " " << path.Path() << "/" << ref.name;
+
+        	system(command.String());
+			i++;
+			if(progressWindow->Lock())
+			{
+				BMessage *pmessage = new BMessage(kMsgProgressUpdate);
+				pmessage->AddFloat("percent", ((float)i / (float)count)*100);
+				progressWindow->PostMessage(pmessage);
+				progressWindow->Unlock();
+			}
+		}
+		progressWindow->Lock();
+		progressWindow->Quit();
+		
+		/*
 		BString cd;
 		BString pathString(cwdPath.Path());
 		// escape any single quotes
@@ -90,6 +132,7 @@ RunnerAddOn::RunCommand(BMessage* message)
 		pipe.AddArg("-c");
 		pipe.AddArg(commandString);
 		pipe.RunAsync();
+		*/
 	}
 
 	return B_OK;

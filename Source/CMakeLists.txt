@@ -10,6 +10,7 @@ set(${PROJECT_NAME}_sources
 	Preferences.cpp
 	PreferencesWindow.cpp
 	SortableListView.cpp
+	ProgressWindow.cpp
 	TrackRunner.rdef
 	)
 
